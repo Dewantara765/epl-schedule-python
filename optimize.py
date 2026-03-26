@@ -14,6 +14,8 @@ def evaluate_weights(weights, teams, derby_pairs, return_schedule=False):
         for rnd in schedule
     ]
 
+    # best_weights = best["weights"]
+
     final_schedule, penalties, team_difficulty = assign_home_away(schedule, teams, weights)
 
     if final_schedule is None:
@@ -48,19 +50,49 @@ def evaluate_weights(weights, teams, derby_pairs, return_schedule=False):
     imbalance = max_diff - min_diff
 
     
-
-    score = (
-        10 * penalties["breaks"] +
-        8 * penalties["big"] +
-        6 * penalties["window"] +
-        2 * penalties["fdb"] +
-        3 * penalties["short_fdb"] +
-        15 * top_penalty +
-        12 * imbalance
-    )
+    objectives = {
+        "breaks": penalties["breaks"],
+        "big": penalties["big"],
+        "window": penalties["window"],
+        "fdb": penalties["fdb"],
+        "short_fdb": penalties["short_fdb"],
+        "top_penalty": top_penalty,
+        "imbalance": imbalance
+    }
 
 
     if return_schedule:
-        return score, final_schedule
+        return objectives, final_schedule
 
-    return score
+    return objectives, final_schedule
+
+def dominates(a, b):
+    better_or_equal = True
+    strictly_better = False
+
+    for key in a:
+        if a[key] > b[key]:  # semua minimize
+            better_or_equal = False
+            break
+        elif a[key] < b[key]:
+            strictly_better = True
+
+    return better_or_equal and strictly_better
+
+def update_pareto(pareto_set, new_entry):
+    new_pareto = []
+    dominated = False
+
+    for p in pareto_set:
+        if dominates(p["obj"], new_entry["obj"]):
+            dominated = True
+            break
+        elif dominates(new_entry["obj"], p["obj"]):
+            continue
+        else:
+            new_pareto.append(p)
+
+    if not dominated:
+        new_pareto.append(new_entry)
+
+    return new_pareto
