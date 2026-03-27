@@ -1,8 +1,11 @@
 from ranking import evaluate_schedule_simple
+import random
 teams = [
         "LEI","MCI","BRE","BOU","ARS","EVE","CRY","WHU","NEW","MUN",
         "NFO","BHA","IPS","FUL","TOT","AVL","SOU","CHE","WOL","LIV"
     ]
+
+random.shuffle(teams)
 
 derby_pairs = [("ARS","TOT"), ("CHE","FUL"), ("EVE","LIV"), ("MCI","MUN")]
 

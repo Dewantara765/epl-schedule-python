@@ -16,16 +16,26 @@ def circle_method(teams):
 
     return rounds
 
+def is_big_match(a, b, big_pairs):
+    return (a, b) in big_pairs or (b, a) in big_pairs
+
 def semi_mirror_schedule(teams):
     first_half = circle_method(teams)
-    random.shuffle(first_half)
 
+    # stabilkan awal
+    head = first_half[:4]
+    tail = first_half[4:]
+    random.shuffle(tail)
+    first_half = head + tail
+
+    # mirror
     second_half = []
     for rnd in first_half:
         flipped = [(b, a) for (a, b) in rnd]
         second_half.append(flipped)
 
-    shift = len(first_half) // 2
+    # random shift (lebih fleksibel)
+    shift = random.randint(3, len(first_half)-3)
     second_half = second_half[shift:] + second_half[:shift]
 
     return first_half + second_half
@@ -173,12 +183,29 @@ def assign_home_away(schedule, teams, weights):
                     expr.append(1 - y[r,m])
             model.Add(h[i,r] == sum(expr))
 
+    for i in range(N):
+        model.Add(sum(h[i,r] for r in range(19)) >= 9)
+        model.Add(sum(h[i,r] for r in range(19)) <= 10)
+
+    # for i in range(N):
+    #     model.Add(h[i,0] != h[i,1])
+
+    # for i in range(N):
+    #     model.Add(h[i,R-2] != h[i,R-1])
+
     # =========================
     # CONSTRAINTS
     # =========================
+    violations = []
+
     for i in range(N):
         for r in range(R-2):
-            model.Add(h[i,r] + h[i,r+1] + h[i,r+2] <= 2)
+            v = model.NewBoolVar(f"v_{i}_{r}")
+
+            model.Add(h[i,r] + h[i,r+1] + h[i,r+2] <= 2 + v)
+            model.Add(h[i,r] + h[i,r+1] + h[i,r+2] >= 1 - v)
+
+            violations.append(v)
 
     for (a,b) in derby_pairs:
         for r in range(R):
@@ -224,44 +251,45 @@ def assign_home_away(schedule, teams, weights):
 
             window_penalties += [over, under]
 
-    for i in range(N):
-        for r in range(R-1):
-            model.Add(h[i,r] == h[i,r+1]).OnlyEnforceIf(breaks[i,r])
-            model.Add(h[i,r] != h[i,r+1]).OnlyEnforceIf(breaks[i,r].Not())
+        same = model.NewBoolVar(f"same_{i}_{r}")
+
+        model.Add(h[i,r] == h[i,r+1]).OnlyEnforceIf(same)
+        model.Add(h[i,r] != h[i,r+1]).OnlyEnforceIf(same.Not())
+
+        model.Add(breaks[i,r] == same)
 
     # FDB
     fdb_penalties = []
     window = 5
 
     for i in range(N):
-        for r in range(R-window+1):
-            total = sum(difficulty[i,r+k] for k in range(window))
+        for r in range(R - window + 1):
+            total = sum(difficulty[i, r+k] for k in range(window))
             avg = window * 3
 
-            over = model.NewIntVar(0,50,f"fdb_over_{i}_{r}")
-            under = model.NewIntVar(0,50,f"fdb_under_{i}_{r}")
+            dev = model.NewIntVar(0, 50, f"fdb_dev_{i}_{r}")
 
-            model.Add(total - avg <= over)
-            model.Add(avg - total <= under)
+            model.Add(total - avg <= dev)
+            model.Add(avg - total <= dev)
 
-            fdb_penalties += [over, under]
+            fdb_penalties.append(dev)
 
     # EXTRA: short window (VERY IMPORTANT)
-    short_fdb_penalties = []
-    window = 3
+    # short_fdb_penalties = []
+    # window = 3
 
-    for i in range(N):
-        for r in range(R-window+1):
-            total = sum(difficulty[i,r+k] for k in range(window))
-            avg = window * 3
+    # for i in range(N):
+    #     for r in range(R-window+1):
+    #         total = sum(difficulty[i,r+k] for k in range(window))
+    #         avg = window * 3
 
-            over = model.NewIntVar(0,30,f"s_fdb_over_{i}_{r}")
-            under = model.NewIntVar(0,30,f"s_fdb_under_{i}_{r}")
+    #         over = model.NewIntVar(0,30,f"s_fdb_over_{i}_{r}")
+    #         under = model.NewIntVar(0,30,f"s_fdb_under_{i}_{r}")
 
-            model.Add(total - avg <= over)
-            model.Add(avg - total <= under)
+    #         model.Add(total - avg <= over)
+    #         model.Add(avg - total <= under)
 
-            short_fdb_penalties += [over, under]
+    #         short_fdb_penalties += [over, under]
     big_window_penalties = []
     window = 4
 
@@ -298,8 +326,8 @@ def assign_home_away(schedule, teams, weights):
         weights["breaks"] * sum(breaks.values()) +
         weights["big"] * (sum(big_penalties) + sum(big_window_penalties)) +
         weights["window"] * sum(window_penalties) +
-        weights["fdb"] * sum(fdb_penalties) +
-        weights["short_fdb"] * sum(short_fdb_penalties)
+        weights["fdb"] * sum(fdb_penalties) 
+        # weights["short_fdb"] * sum(short_fdb_penalties)
     )
 
     
@@ -339,7 +367,8 @@ def assign_home_away(schedule, teams, weights):
             "big": sum(solver.Value(v) for v in big_penalties),
             "window": sum(solver.Value(v) for v in window_penalties),
             "fdb": sum(solver.Value(v) for v in fdb_penalties),
-            "short_fdb": sum(solver.Value(v) for v in short_fdb_penalties)
+           "streak_violation": sum(solver.Value(v) for v in violations)
+            # "short_fdb": sum(solver.Value(v) for v in short_fdb_penalties)
         }, team_difficulty
     return None
 
